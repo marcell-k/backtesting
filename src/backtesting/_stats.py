@@ -94,14 +94,15 @@ def compute_stats(
             exit_bars = trades_df["ExitBar"].values
 
             for ind in strategy_instance._indicators:
+                ind_name = ind.name
                 ind = np.atleast_2d(ind)
                 n_dims = len(ind)
 
                 for i, values in enumerate(ind):
                     suffix = f"_{i}" if n_dims > 1 else ""
                     # Vectorized indexing: values[array_of_indices]
-                    trades_df[f"Entry_{ind.name}{suffix}"] = values[entry_bars]
-                    trades_df[f"Exit_{ind.name}{suffix}"] = values[exit_bars]
+                    trades_df[f"Entry_{ind_name}{suffix}"] = values[entry_bars]
+                    trades_df[f"Exit_{ind_name}{suffix}"] = values[exit_bars]
 
         commissions = sum(t._commissions for t in trades)
     del trades
@@ -227,7 +228,7 @@ def compute_stats(
 
 
 class _Stats(pd.Series):
-    def __repr__(self):
+    def __repr__(self) -> str:
         with pd.option_context(
             "display.max_colwidth",
             20,  # Prevent expansion due to _equity and _trades dfs

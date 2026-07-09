@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+import contextlib
 from collections.abc import Sequence
 from copy import copy
 from difflib import get_close_matches
@@ -59,17 +60,19 @@ class Strategy(metaclass=ABCMeta):
     your own strategy.
     """
 
-    def __init__(self, broker, data, params):
+    def __init__(self, broker, data, params) -> None:
         self._indicators = []
         self._broker: _Broker = broker
         self._data: _Data = data
         self._params = self._check_params(params)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<Strategy " + str(self) + ">"
 
-    def __str__(self):
-        params = ",".join(f"{i[0]}={i[1]}" for i in zip(self._params.keys(), map(_as_str, self._params.values())))
+    def __str__(self) -> str:
+        params = ",".join(
+            f"{i[0]}={i[1]}" for i in zip(self._params.keys(), map(_as_str, self._params.values()), strict=False)
+        )
         if params:
             params = "(" + params + ")"
         return f"{self.__class__.__name__}{params}"
@@ -146,7 +149,9 @@ class Strategy(metaclass=ABCMeta):
         """
 
         def _format_name(name: str) -> str:
-            return name.format(*map(_as_str, args), **dict(zip(kwargs.keys(), map(_as_str, kwargs.values()))))
+            return name.format(
+                *map(_as_str, args), **dict(zip(kwargs.keys(), map(_as_str, kwargs.values()), strict=False))
+            )
 
         if name is None:
             params = ",".join(filter(None, map(_as_str, chain(args, kwargs.values()))))
@@ -240,7 +245,7 @@ class Strategy(metaclass=ABCMeta):
         """
 
     class __FULL_EQUITY(float):
-        def __repr__(self):
+        def __repr__(self) -> str:
             return ".9999"
 
     _FULL_EQUITY = __FULL_EQUITY(1 - sys.float_info.epsilon)
@@ -314,31 +319,7 @@ class Strategy(metaclass=ABCMeta):
 
     @property
     def data(self) -> _Data:
-        """
-        Price data, roughly as passed into
-        `backtesting.backtesting.Backtest.__init__`,
-        but with two significant exceptions:
-
-        * `data` is _not_ a DataFrame, but a custom structure
-          that serves customized numpy arrays for reasons of performance
-          and convenience. Besides OHLCV columns, `.index` and length,
-          it offers `.pip` property, the smallest price unit of change.
-        * Within `backtesting.backtesting.Strategy.init`, `data` arrays
-          are available in full length, as passed into
-          `backtesting.backtesting.Backtest.__init__`
-          (for precomputing indicators and such). However, within
-          `backtesting.backtesting.Strategy.next`, `data` arrays are
-          only as long as the current iteration, simulating gradual
-          price point revelation. In each call of
-          `backtesting.backtesting.Strategy.next` (iteratively called by
-          `backtesting.backtesting.Backtest` internally),
-          the last array value (e.g. `data.Close[-1]`)
-          is always the _most recent_ value.
-        * If you need data arrays (e.g. `data.Close`) to be indexed
-          **Pandas series**, you can call their `.s` accessor
-          (e.g. `data.Close.s`). If you need the whole of data
-          as a **DataFrame**, use `.df` accessor (i.e. `data.df`).
-        """
+        """Price data."""
         return self._data
 
     @property
@@ -347,17 +328,17 @@ class Strategy(metaclass=ABCMeta):
         return self._broker.position
 
     @property
-    def orders(self) -> Tuple[Order, ...]:
+    def orders(self) -> tuple[Order, ...]:
         """List of orders (see `Order`) waiting for execution."""
         return tuple(self._broker.orders)
 
     @property
-    def trades(self) -> Tuple[Trade, ...]:
+    def trades(self) -> tuple[Trade, ...]:
         """List of active trades (see `Trade`)."""
         return tuple(self._broker.trades)
 
     @property
-    def closed_trades(self) -> Tuple[Trade, ...]:
+    def closed_trades(self) -> tuple[Trade, ...]:
         """List of settled trades (see `Trade`)."""
         return tuple(self._broker.closed_trades)
 
@@ -373,10 +354,10 @@ class Position:
             ...  # we have a position, either long or short
     """
 
-    def __init__(self, broker: _Broker):
+    def __init__(self, broker: _Broker) -> None:
         self.__broker = broker
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.size != 0
 
     @property
@@ -406,13 +387,11 @@ class Position:
         return self.size < 0
 
     def close(self, portion: float = 1.0):
-        """
-        Close portion of position by closing `portion` of each active trade. See `Trade.close`.
-        """
+        """Close portion of position by closing `portion` of each active trade. See `Trade.close`."""
         for trade in self.__broker.trades:
             trade.close(portion)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Position: {self.size} ({len(self.__broker.trades)} trades)>"
 
 
@@ -424,16 +403,6 @@ class Order:
     """
     Place new orders through `Strategy.buy()` and `Strategy.sell()`.
     Query existing orders through `Strategy.orders`.
-
-    When an order is executed or [filled], it results in a `Trade`.
-
-    If you wish to modify aspects of a placed but not yet filled order,
-    cancel it and place a new one instead.
-
-    All placed orders are [Good 'Til Canceled].
-
-    [filled]: https://www.investopedia.com/terms/f/fill.asp
-    [Good 'Til Canceled]: https://www.investopedia.com/terms/g/gtc.asp
     """
 
     def __init__(
@@ -446,7 +415,7 @@ class Order:
         tp_price: float | None = None,
         parent_trade: Trade | None = None,
         tag: object = None,
-    ):
+    ) -> None:
         self.__broker = broker
         assert size != 0
         self.__size = size
@@ -463,7 +432,7 @@ class Order:
             setattr(self, f"_{self.__class__.__qualname__}__{k}", v)
         return self
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "<Order {}>".format(
             ", ".join(
                 f"{param}={try_(lambda: round(value, 5), value)!r}"
@@ -496,13 +465,7 @@ class Order:
 
     @property
     def size(self) -> float:
-        """
-        Order size (negative for short orders).
-
-        If size is a value between 0 and 1, it is interpreted as a fraction of current
-        available liquidity (cash plus `Position.pl` minus used margin).
-        A value greater than or equal to 1 indicates an absolute number of units.
-        """
+        """Order size (negative for short orders)."""
         return self.__size
 
     @property
@@ -510,9 +473,6 @@ class Order:
         """
         Order limit price for [limit orders], or None for [market orders],
         which are filled at next available price.
-
-        [limit orders]: https://www.investopedia.com/terms/l/limitorder.asp
-        [market orders]: https://www.investopedia.com/terms/m/marketorder.asp
         """
         return self.__limit_price
 
@@ -521,27 +481,15 @@ class Order:
         """
         Order stop price for [stop-limit/stop-market][_] order,
         otherwise None if no stop was set, or the stop price has already been hit.
-
-        [_]: https://www.investopedia.com/terms/s/stoporder.asp
         """
         return self.__stop_price
 
     @property
     def sl(self) -> float | None:
-        """
-        A stop-loss price at which, if set, a new contingent stop-market order
-        will be placed upon the `Trade` following this order's execution.
-        See also `Trade.sl`.
-        """
         return self.__sl_price
 
     @property
     def tp(self) -> float | None:
-        """
-        A take-profit price at which, if set, a new contingent limit order
-        will be placed upon the `Trade` following this order's execution.
-        See also `Trade.tp`.
-        """
         return self.__tp_price
 
     @property
@@ -591,7 +539,7 @@ class Trade:
     Find active trades in `Strategy.trades` and closed, settled trades in `Strategy.closed_trades`.
     """
 
-    def __init__(self, broker: _Broker, size: int, entry_price: float, entry_bar, tag):
+    def __init__(self, broker: _Broker, size: int, entry_price: float, entry_bar, tag) -> None:
         self.__broker = broker
         self.__size = size
         self.__entry_price = entry_price
@@ -602,9 +550,9 @@ class Trade:
         self.__tp_order: Order | None = None
         self.__open_sl: float | None = None
         self.__tag = tag
-        self._commissions = 0
+        self._commissions = 0.0
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"<Trade size={self.__size} time={self.__entry_bar}-{self.__exit_bar or ''} "
             f"price={self.__entry_price}-{self.__exit_price or ''} pl={self.pl:.0f}"
@@ -623,7 +571,7 @@ class Trade:
         """Place new `Order` to close `portion` of the trade at next market price."""
         assert 0 < portion <= 1, "portion must be a fraction between 0 and 1"
         # Ensure size is an int to avoid rounding errors on 32-bit OS
-        size = copysign(max(1, int(round(abs(self.__size) * portion))), -self.__size)
+        size = copysign(max(1, round(abs(self.__size) * portion)), -self.__size)
         order = Order(self.__broker, size, parent_trade=self, tag=self.__tag)
         self.__broker.orders.insert(0, order)
 
@@ -690,12 +638,12 @@ class Trade:
     # Extra properties
 
     @property
-    def entry_time(self) -> Union[pd.Timestamp, int]:
+    def entry_time(self) -> pd.Timestamp | int:
         """Datetime of when the trade was entered."""
         return self.__broker._data.index[self.__entry_bar]
 
     @property
-    def exit_time(self) -> Optional[Union[pd.Timestamp, int]]:
+    def exit_time(self) -> pd.Timestamp | int | None:
         """Datetime of when the trade was exited."""
         if self.__exit_bar is None:
             return None
@@ -732,7 +680,7 @@ class Trade:
 
     @property
     def value(self):
-        """Trade total value in cash (volume × price)."""
+        """Trade total value in cash (volume * price)."""
         price = self.__exit_price or self.__broker.last_price
         return abs(self.__size) * price
 
@@ -794,7 +742,7 @@ class _Broker:
         hedging,
         exclusive_orders,
         index,
-    ):
+    ) -> None:
         assert cash > 0, f"cash should be > 0, is {cash}"
         assert 0 < margin <= 1, f"margin should be between 0 and 1, is {margin}"
         self._data: _Data = data
@@ -821,15 +769,15 @@ class _Broker:
         self._exclusive_orders = exclusive_orders
 
         self._equity = np.tile(np.nan, len(index))
-        self.orders: List[Order] = []
-        self.trades: List[Trade] = []
+        self.orders: list[Order] = []
+        self.trades: list[Trade] = []
         self.position = Position(self)
-        self.closed_trades: List[Trade] = []
+        self.closed_trades: list[Trade] = []
 
     def _commission_func(self, order_size, price):
         return self._commission_fixed + abs(order_size) * price * self._commission_relative
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Broker: {self._cash:.0f}{self.position.pl:+.1f} ({len(self.trades)} trades)>"
 
     def new_order(
@@ -841,11 +789,9 @@ class _Broker:
         tp: float | None = None,
         tag: object = None,
         *,
-        trade: Optional[Trade] = None,
+        trade: Trade | None = None,
     ) -> Order:
-        """
-        Argument size indicates whether the order is long or short
-        """
+        """Argument size indicates whether the order is long or short."""
         size = float(size)
         stop = stop and float(stop)
         limit = limit and float(limit)
@@ -869,15 +815,14 @@ class _Broker:
 
         order = Order(self, size, limit, stop, sl, tp, trade, tag)
 
-        if not trade:
+        if not trade and self._exclusive_orders:
             # If exclusive orders (each new order auto-closes previous orders/position),
             # cancel all non-contingent orders and close all open trades beforehand
-            if self._exclusive_orders:
-                for o in self.orders:
-                    if not o.is_contingent:
-                        o.cancel()
-                for t in self.trades:
-                    t.close()
+            for o in self.orders:
+                if not o.is_contingent:
+                    o.cancel()
+            for t in self.trades:
+                t.close()
 
         # Put the new order in the order queue, Ensure SL orders are processed first
         self.orders.insert(0 if trade and stop else len(self.orders), order)
@@ -929,7 +874,7 @@ class _Broker:
         reprocess_orders = False
 
         # Process orders
-        for order in list(self.orders):  # type: Order
+        for order in list(self.orders):
             # Related SL/TP order was already removed
             if order not in self.orders:
                 continue
@@ -1016,6 +961,7 @@ class _Broker:
                     warnings.warn(
                         f"time={self._i}: Broker canceled the relative-sized order due to insufficient margin "
                         f"(equity={self.equity:.2f}, margin_available={self.margin_available:.2f}).",
+                        stacklevel=2,
                         category=UserWarning,
                     )
                     # XXX: The order is canceled by the broker?
@@ -1052,6 +998,7 @@ class _Broker:
                 warnings.warn(
                     f"time={self._i}: Broker canceled the order due to insufficient margin "
                     f"(equity={self.equity:.2f}, margin_available={self.margin_available:.2f}).",
+                    stacklevel=2,
                     category=UserWarning,
                 )
                 self.orders.remove(order)
@@ -1085,6 +1032,7 @@ class _Broker:
                             "somewhat dubious. "
                             "See https://github.com/kernc/backtesting.py/issues/119",
                             UserWarning,
+                            stacklevel=2,
                         )
 
             # Order processed
@@ -1127,10 +1075,7 @@ class _Broker:
         # Apply commission one more time at trade exit
         commission = self._commission(trade.size, price)
         self._cash += trade.pl - commission
-        # Save commissions on Trade instance for stats
         trade_open_commission = self._commission(closed_trade.size, closed_trade.entry_price)
-        # applied here instead of on Trade open because size could have changed
-        # by way of _reduce_trade()
         closed_trade._commissions = commission + trade_open_commission
 
     def _open_trade(
@@ -1158,24 +1103,6 @@ class Backtest:
     """
     Backtest a particular (parameterized) strategy
     on particular data.
-
-    Initialize a backtest. Requires data and a strategy to test.
-    After initialization, you can call method
-    `backtesting.backtesting.Backtest.run` to run a backtest
-    instance, or `backtesting.backtesting.Backtest.optimize` to
-    optimize it.
-
-    `data` is a `pd.DataFrame` with columns:
-    `Open`, `High`, `Low`, `Close`, and (optionally) `Volume`.
-    If any columns are missing, set them to what you have available,
-    e.g.
-
-        df['Open'] = df['High'] = df['Low'] = df['Close']
-
-    The passed data frame can contain additional columns that
-    can be used by the strategy (e.g. sentiment info).
-    DataFrame index can be either a datetime index (timestamps)
-    or a monotonic range index (i.e. a sequence of periods).
 
     `strategy` is a `backtesting.backtesting.Strategy`
     _subclass_ (not an instance).
@@ -1234,27 +1161,22 @@ class Backtest:
     .. tip:: Fractional trading
         See also `backtesting.lib.FractionalBacktest` if you want to trade
         fractional units (of e.g. bitcoin).
-
-    [FIFO]: https://www.investopedia.com/terms/n/nfa-compliance-rule-2-43b.asp
-    [active and ongoing]: https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html#backtesting.backtesting.Strategy.trades
     """
 
     def __init__(
         self,
         data: pd.DataFrame,
-        strategy: Type[Strategy],
+        strategy: type[Strategy],
         *,
         cash: float = 10_000,
         spread: float = 0.0,
-        commission: Union[float, Tuple[float, float]] = 0.0,
+        commission: float | tuple[float, float] = 0.0,
         margin: float = 1.0,
         trade_on_close=False,
         hedging=False,
         exclusive_orders=False,
         finalize_trades=True,
-    ):
-        if not (isinstance(strategy, type) and issubclass(strategy, Strategy)):
-            raise TypeError("`strategy` must be a Strategy sub-type")
+    ) -> None:
         if not isinstance(data, pd.DataFrame):
             raise TypeError("`data` must be a pandas.DataFrame with columns")
         if not isinstance(spread, Number):
@@ -1277,10 +1199,8 @@ class Backtest:
             # Numeric index with most large numbers
             (data.index.is_numeric() and (data.index > pd.Timestamp("1975").timestamp()).mean() > 0.8)
         ):
-            try:
+            with contextlib.suppress(ValueError):
                 data.index = pd.to_datetime(data.index, infer_datetime_format=True)
-            except ValueError:
-                pass
 
         if "Volume" not in data:
             data["Volume"] = np.nan
@@ -1328,59 +1248,11 @@ class Backtest:
             index=data.index,
         )
         self._strategy = strategy
-        self._results: Optional[pd.Series] = None
+        self._results: pd.Series | None = None
         self._finalize_trades = bool(finalize_trades)
 
     def run(self, **kwargs) -> pd.Series:
-        """
-        Run the backtest. Returns `pd.Series` with results and statistics.
-
-        Keyword arguments are interpreted as strategy parameters.
-
-            >>> Backtest(GOOG, SmaCross).run()
-            Start                     2004-08-19 00:00:00
-            End                       2013-03-01 00:00:00
-            Duration                   3116 days 00:00:00
-            Exposure Time [%]                    96.74115
-            Equity Final [$]                     51422.99
-            Equity Peak [$]                      75787.44
-            Return [%]                           414.2299
-            Buy & Hold Return [%]               703.45824
-            Return (Ann.) [%]                    21.18026
-            Volatility (Ann.) [%]                36.49391
-            CAGR [%]                             14.15984
-            Sharpe Ratio                          0.58038
-            Sortino Ratio                         1.08479
-            Calmar Ratio                          0.44144
-            Alpha [%]                           394.37391
-            Beta                                  0.03803
-            Max. Drawdown [%]                   -47.98013
-            Avg. Drawdown [%]                    -5.92585
-            Max. Drawdown Duration      584 days 00:00:00
-            Avg. Drawdown Duration       41 days 00:00:00
-            # Trades                                   66
-            Win Rate [%]                          46.9697
-            Best Trade [%]                       53.59595
-            Worst Trade [%]                     -18.39887
-            Avg. Trade [%]                        2.53172
-            Max. Trade Duration         183 days 00:00:00
-            Avg. Trade Duration          46 days 00:00:00
-            Profit Factor                         2.16795
-            Expectancy [%]                        3.27481
-            SQN                                   1.07662
-            Kelly Criterion                       0.15187
-            _strategy                            SmaCross
-            _equity_curve                           Eq...
-            _trades                       Size  EntryB...
-            dtype: object
-
-        .. warning::
-            You may obtain different results for different strategy parameters.
-            E.g. if you use 50- and 200-bar SMA, the trading simulation will
-            begin on bar 201. The actual length of delay is equal to the lookback
-            period of the `Strategy.I` indicator which lags the most.
-            Obviously, this can affect results.
-        """
+        """Run the backtest. Returns `pd.Series` with results and statistics."""
         data = _Data(self._data.copy(deep=False))
         broker: _Broker = self._broker(data=data)
         strategy: Strategy = self._strategy(broker, data, kwargs)
@@ -1456,15 +1328,15 @@ class Backtest:
     def optimize(
         self,
         *,
-        maximize: Union[str, Callable[[pd.Series], float]] = "SQN",
+        maximize: str | Callable[[pd.Series], float] = "SQN",
         method: str = "grid",
-        max_tries: Optional[Union[int, float]] = None,
-        constraint: Optional[Callable[[dict], bool]] = None,
+        max_tries: int | float | None = None,
+        constraint: Callable[[dict], bool] | None = None,
         return_heatmap: bool = False,
         return_optimization: bool = False,
         random_state: int | None = None,
         **kwargs,
-    ) -> Union[pd.Series, Tuple[pd.Series, pd.Series], Tuple[pd.Series, pd.Series, dict]]:
+    ) -> pd.Series | tuple[pd.Series, pd.Series] | tuple[pd.Series, pd.Series, dict]:
         """
         Optimize strategy parameters to an optimal combination.
         Returns result `pd.Series` of the best run.
@@ -1532,29 +1404,21 @@ class Backtest:
             if maximize not in dummy_stats().index:
                 raise ValueError("`maximize`, if str, must match a key in pd.Series result of backtest.run()")
 
-            def maximize(stats: pd.Series, _key=maximize):
+            def _maximize_by_key(stats: pd.Series, _key=maximize) -> float:
                 return stats[_key]
 
-        elif not callable(maximize):
-            raise TypeError(
-                "`maximize` must be str (a field of backtest.run() result "
-                "Series) or a function that accepts result Series "
-                "and returns a number; the higher the better"
-            )
+            maximize = _maximize_by_key
+
         assert callable(maximize), maximize
 
         have_constraint = bool(constraint)
         if constraint is None:
 
-            def constraint(_):
+            def _constraint_always_true(_) -> bool:
                 return True
 
-        elif not callable(constraint):
-            raise TypeError(
-                "`constraint` must be a function that accepts a dict "
-                "of strategy parameters and returns a bool whether "
-                "the combination of parameters is admissible or not"
-            )
+            constraint = _constraint_always_true
+
         assert callable(constraint), constraint
 
         if method == "skopt":
@@ -1588,7 +1452,7 @@ class Backtest:
                 )
             return size
 
-        def _optimize_grid() -> Union[pd.Series, Tuple[pd.Series, pd.Series]]:
+        def _optimize_grid() -> pd.Series | tuple[pd.Series, pd.Series]:
             rand = default_rng(random_state).random
             grid_frac = 1 if max_tries is None else max_tries if 0 < max_tries <= 1 else max_tries / _grid_size()
             param_combos = [
@@ -1625,8 +1489,8 @@ class Backtest:
                     total=len(param_combos),
                     desc="Backtest.optimize",
                 )
-                for param_batch, result in zip(_batch(param_combos), results):
-                    for params, stats in zip(param_batch, result):
+                for param_batch, result in zip(_batch(param_combos), results, strict=False):
+                    for params, stats in zip(param_batch, result, strict=False):
                         if stats is not None:
                             heatmap[tuple(params.values())] = maximize(stats)
 
@@ -1636,13 +1500,13 @@ class Backtest:
                 stats = self.run(**param_combos[0])
             else:
                 best_params = heatmap.idxmax(skipna=True)
-                stats = self.run(**dict(zip(heatmap.index.names, best_params)))
+                stats = self.run(**dict(zip(heatmap.index.names, best_params, strict=False)))
 
             if return_heatmap:
                 return stats, heatmap
             return stats
 
-        def _optimize_sambo() -> Union[pd.Series, Tuple[pd.Series, pd.Series], Tuple[pd.Series, pd.Series, dict]]:
+        def _optimize_sambo() -> pd.Series | tuple[pd.Series, pd.Series] | tuple[pd.Series, pd.Series, dict]:
             try:
                 import sambo
             except ImportError:
@@ -1654,7 +1518,7 @@ class Backtest:
             )
 
             dimensions = []
-            for key, values in kwargs.items():
+            for _key, values in kwargs.items():
                 values = np.asarray(values)
                 if values.dtype.kind in "mM":  # timedelta, datetime64
                     # these dtypes are unsupported in SAMBO, so convert to raw int
@@ -1689,12 +1553,12 @@ class Backtest:
             def objective_function(x):
                 nonlocal progress, memoized_run, constraint, _names
                 next(progress)
-                value = memoized_run(tuple(zip(_names, x)))
+                value = memoized_run(tuple(zip(_names, x, strict=False)))
                 return 0 if np.isnan(value) else value
 
             def cons(x):
                 nonlocal constraint, _names
-                return constraint(AttrDict(zip(_names, x)))
+                return constraint(AttrDict(zip(_names, x, strict=False)))
 
             res = sambo.minimize(
                 fun=objective_function,
@@ -1705,11 +1569,11 @@ class Backtest:
                 rng=random_state,
             )
 
-            stats = self.run(**dict(zip(kwargs.keys(), res.x)))
+            stats = self.run(**dict(zip(kwargs.keys(), res.x, strict=False)))
             output = [stats]
 
             if return_heatmap:
-                heatmap = pd.Series(dict(zip(map(tuple, res.xv), -res.funv)), name=maximize_key)
+                heatmap = pd.Series(dict(zip(map(tuple, res.xv), -res.funv, strict=False)), name=maximize_key)
                 heatmap.index.names = kwargs.keys()
                 heatmap.sort_index(inplace=True)
                 output.append(heatmap)
@@ -1754,7 +1618,7 @@ class Backtest:
         plot_trades=True,
         smooth_equity=False,
         relative_equity=True,
-        superimpose: Union[bool, str] = True,
+        superimpose: bool | str = True,
         resample=True,
         reverse_indicators=False,
         show_legend=True,
@@ -1815,16 +1679,7 @@ class Backtest:
 
         If `resample` is `True`, the OHLC data is resampled in a way that
         makes the upper number of candles for Bokeh to plot limited to 10_000.
-        This may, in situations of overabundant data,
-        improve plot's interactive performance and avoid browser's
-        `Javascript Error: Maximum call stack size exceeded` or similar.
-        Equity & dropdown curves and individual trades data is,
-        likewise, [reasonably _aggregated_][TRADES_AGG].
-        `resample` can also be a [Pandas offset string],
-        such as `'5T'` or `'5min'`, in which case this frequency will be
-        used to resample, overriding above numeric limitation.
-        Note, all this only works for data with a datetime index.
-
+        
         If `reverse_indicators` is `True`, the indicators below the OHLC chart
         are plotted in reverse order of declaration.
 

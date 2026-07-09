@@ -553,7 +553,7 @@ class FractionalBacktest(Backtest):
     [satoshi]: https://en.wikipedia.org/wiki/Bitcoin#Units_and_divisibility
     """
 
-    def __init__(self, data, *args, fractional_unit=1 / 100e6, **kwargs):
+    def __init__(self, data, *args, fractional_unit=1 / 100e6, **kwargs) -> None:
         if "satoshi" in kwargs:
             warnings.warn(
                 "Parameter `FractionalBacktest(..., satoshi=)` is deprecated. "
@@ -613,7 +613,7 @@ class MultiBacktest:
         heatmap_per_ticker: pd.DataFrame = btm.optimize(...)
     """
 
-    def __init__(self, df_list, strategy_cls, **kwargs):
+    def __init__(self, df_list, strategy_cls, **kwargs) -> None:
         self._dfs = df_list
         self._strategy = strategy_cls
         self._bt_kwargs = kwargs
@@ -641,7 +641,7 @@ class MultiBacktest:
     @staticmethod
     def _mp_task_run(args):
         data_shm, strategy, bt_kwargs, run_kwargs = args
-        dfs, shms = zip(*(SharedMemoryManager.shm2df(i) for i in data_shm))
+        dfs, shms = zip(*(SharedMemoryManager.shm2df(i) for i in data_shm), strict=False)
         try:
             return [
                 stats.filter(regex="^[^_]") if stats["# Trades"] else None

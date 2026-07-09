@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import os
-import sys
 import warnings
 from collections.abc import Sequence
 from contextlib import contextmanager
 from functools import partial
 from itertools import chain
-from multiprocessing import resource_tracker as _mprt
 from multiprocessing import shared_memory as _mpshm
 from numbers import Number
-from threading import Lock
 from typing import cast
 
 import numpy as np
@@ -75,8 +72,8 @@ def _batch(seq):
         yield seq[i : i + n]
 
 
-def _data_period(index) -> Union[pd.Timedelta, Number]:
-    """Return data index period as pd.Timedelta"""
+def _data_period(index) -> pd.Timedelta | Number:
+    """Return data index period as pd.Timedelta."""
     values = pd.Series(index[-100:])
     return values.diff().dropna().median()
 
@@ -122,26 +119,26 @@ class _Array(np.ndarray):
     # when (un-)pickling.
     def __reduce__(self):
         value = super().__reduce__()
-        return value[:2] + (value[2] + (self.__dict__,),)
+        return (*value[:2], value[2] + (self.__dict__,))
 
     def __setstate__(self, state):
         self.__dict__.update(state[-1])
         super().__setstate__(state[:-1])
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         try:
             return bool(self[-1])
         except IndexError:
             return super().__bool__()
 
-    def __float__(self):
+    def __float__(self) -> float:
         try:
             return float(self[-1])
         except IndexError:
             return super().__float__()
 
     def to_series(self):
-        warnings.warn("`.to_series()` is deprecated. For pd.Series conversion, use accessor `.s`")
+        warnings.warn("`.to_series()` is deprecated. For pd.Series conversion, use accessor `.s`", stacklevel=2)
         return self.s
 
     @property
@@ -170,7 +167,7 @@ class _Data:
     for performance reasons.
     """
 
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame) -> None:
         self.__df = df
         self.__len = len(df)  # Current length
         self.__pip: float | None = None
@@ -197,13 +194,13 @@ class _Data:
         # Leave index as Series because pd.Timestamp nicer API to work with
         self.__arrays["__index"] = index
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         i = min(self.__len, len(self.__df)) - 1
         index = self.__arrays["__index"][i]
         items = ", ".join(f"{k}={v}" for k, v in self.__df.iloc[i].items())
         return f"<Data i={i} ({index}) {items}>"
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.__len
 
     @property
@@ -256,27 +253,7 @@ class _Data:
         self.__dict__ = state
 
 
-if sys.version_info >= (3, 13):
-    SharedMemory = _mpshm.SharedMemory
-else:
-
-    class SharedMemory(_mpshm.SharedMemory):
-        # From https://github.com/python/cpython/issues/82300#issuecomment-2169035092
-        __lock = Lock()
-
-        def __init__(self, *args, track: bool = True, **kwargs):
-            self._track = track
-            if track:
-                return super().__init__(*args, **kwargs)
-            with self.__lock:
-                with patch(_mprt, "register", lambda *a, **kw: None):
-                    super().__init__(*args, **kwargs)
-
-        def unlink(self):
-            if _mpshm._USE_POSIX and self._name:
-                _mpshm._posixshmem.shm_unlink(self._name)
-                if self._track:
-                    _mprt.unregister(self._name, "shared_memory")
+SharedMemory = _mpshm.SharedMemory
 
 
 class SharedMemoryManager:
@@ -291,7 +268,7 @@ class SharedMemoryManager:
 
     def SharedMemory(self, *, name=None, create=False, size=0, track=True):
         shm = SharedMemory(name=name, create=create, size=size, track=track)
-        shm._create = create
+        shm._create = create  # type: ignore[attr-defined]
         # Essential to keep refs on Windows
         # https://stackoverflow.com/questions/74193377/filenotfounderror-when-passing-a-shared-memory-to-a-new-process#comment130999060_74194875  # noqa: E501
         self._shms.append(shm)
@@ -304,7 +281,7 @@ class SharedMemoryManager:
         for shm in self._shms:
             try:
                 shm.close()
-                if shm._create:
+                if shm._create:  # type: ignore[attr-defined]
                     shm.unlink()
             except Exception:
                 warnings.warn(f"Failed to unlink shared memory {shm.name!r}", category=ResourceWarning, stacklevel=2)
@@ -338,7 +315,10 @@ class SharedMemoryManager:
     def shm2df(data_shm):
         shm = [SharedMemory(name=name, create=False, track=False) for _, name, _, _ in data_shm]
         df = pd.DataFrame(
-            {col: SharedMemoryManager.shm2s(shm, shape, dtype) for shm, (col, _, shape, dtype) in zip(shm, data_shm)}
+            {
+                col: SharedMemoryManager.shm2s(shm, shape, dtype)
+                for shm, (col, _, shape, dtype) in zip(shm, data_shm, strict=False)
+            }
         )
         df.set_index(SharedMemoryManager._DF_INDEX_COL, drop=True, inplace=True)
         df.index.name = None

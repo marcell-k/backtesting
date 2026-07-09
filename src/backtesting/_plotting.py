@@ -59,7 +59,7 @@ if IS_JUPYTER_NOTEBOOK:
         "Setting Bokeh output to notebook. "
         "This may not work in Jupyter clients without JavaScript "
         "support, such as old IDEs. "
-        "Reset with `backtesting.set_bokeh_output(notebook=False)`."
+        "Reset with `backtesting.set_bokeh_output(notebook=False)`.", stacklevel=2
     )
     output_notebook()
 
@@ -158,7 +158,7 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
         require_minutes = (timespan / _MAX_CANDLES).total_seconds() // 60
         freq = freq_minutes.where(freq_minutes >= require_minutes).first_valid_index()
         warnings.warn(
-            f"Data contains too many candlesticks to plot; downsampling to {freq!r}. See `Backtest.plot(resample=...)`"
+            f"Data contains too many candlesticks to plot; downsampling to {freq!r}. See `Backtest.plot(resample=...)`", stacklevel=2
         )
 
     from .lib import _EQUITY_AGG, OHLCV_AGG, TRADES_AGG
@@ -773,7 +773,7 @@ return this.labels[index] || "";
     source.add(ohlc_extreme_values.min(axis=1), "ohlc_low")
     source.add(ohlc_extreme_values.max(axis=1), "ohlc_high")
 
-    custom_js_args = dict(ohlc_range=fig_ohlc.y_range, source=source)
+    custom_js_args = {"ohlc_range": fig_ohlc.y_range, "source": source}
     if plot_volume:
         custom_js_args.update(volume_range=fig_volume.y_range)
 

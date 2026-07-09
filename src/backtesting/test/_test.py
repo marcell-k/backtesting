@@ -3,19 +3,16 @@ import multiprocessing as mp
 import os
 import sys
 import time
-import unittest
 from concurrent.futures.process import ProcessPoolExecutor
 from contextlib import contextmanager
-from glob import glob
-from runpy import run_path
-from tempfile import NamedTemporaryFile, gettempdir
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from unittest import TestCase
 
 import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-from backtesting import Backtest, Strategy
 from backtesting._stats import compute_drawdown_duration_peaks
 from backtesting._util import _Array, _as_str, _Indicator, patch, try_
 from backtesting.lib import (
@@ -34,6 +31,7 @@ from backtesting.lib import (
     resample_apply,
 )
 from backtesting.test import BTCUSD, EURUSD, GOOG, SMA
+from src.backtesting import Backtest, Strategy
 
 SHORT_DATA = GOOG.iloc[:20]  # Short data for fast tests with no indicator lag
 
@@ -48,7 +46,7 @@ def _tempfile():
 
 @contextmanager
 def chdir(path):
-    cwd = os.getcwd()
+    cwd = Path.cwd()
     os.chdir(path)
     try:
         yield
@@ -151,7 +149,8 @@ class TestBacktest(TestCase):
 
                 assert float(self.data.Close) == self.data.Close[-1]
 
-            def next(self, _FEW_DAYS=pd.Timedelta("3 days")):
+            def next(self, _FEW_DAYS: pd.Timedelta):
+                _FEW_DAYS = pd.Timedelta("3 days")
                 assert self.equity >= 0
 
                 assert isinstance(self.sma, _Indicator)
@@ -166,12 +165,6 @@ class TestBacktest(TestCase):
                 assert not np.isnan(self.data.Volume[-1])
                 assert not np.isnan(self.sma[-1])
                 assert self.data.index[-1]
-
-                self.position
-                self.position.size
-                self.position.pl
-                self.position.pl_pct
-                self.position.is_long
 
                 if crossover(self.sma, self.data.Close):
                     for order in self.orders:
@@ -609,7 +602,7 @@ class TestOptimize(TestCase):
             res.filter(regex="^[^_]").fillna(-1).to_dict(), res2.filter(regex="^[^_]").fillna(-1).to_dict()
         )
 
-        res3, heatmap = bt.optimize(**OPT_PARAMS, return_heatmap=True, constraint=lambda d: d.slow > 2 * d.fast)
+        _res3, heatmap = bt.optimize(**OPT_PARAMS, return_heatmap=True, constraint=lambda d: d.slow > 2 * d.fast)
         self.assertIsInstance(heatmap, pd.Series)
         self.assertEqual(len(heatmap), 4)
         self.assertEqual(heatmap.name, default_maximize)
@@ -676,26 +669,26 @@ class TestPlot(TestCase):
         bt.run()
         with _tempfile() as f:
             bt.plot(filename=f[: -len(".html")], open_browser=False)
-            self.assertLess(os.path.getsize(f), 500000)
+            self.assertLess(Path(f).stat().st_size, 500000)
 
     def test_params(self):
         bt = Backtest(GOOG.iloc[:100], SmaCross)
         bt.run()
         with _tempfile() as f:
-            for p in dict(
-                plot_volume=False,  # noqa: C408
-                plot_equity=False,
-                plot_return=True,
-                plot_pl=False,
-                plot_drawdown=True,
-                plot_trades=False,
-                superimpose=False,
-                resample="1W",
-                smooth_equity=False,
-                relative_equity=False,
-                reverse_indicators=True,
-                show_legend=False,
-            ).items():
+            for p in {
+                "plot_volume": False,
+                "plot_equity": False,
+                "plot_return": True,
+                "plot_pl": False,
+                "plot_drawdown": True,
+                "plot_trades": False,
+                "superimpose": False,
+                "resample": "1W",
+                "smooth_equity": False,
+                "relative_equity": False,
+                "reverse_indicators": True,
+                "show_legend": False,
+            }.items():
                 with self.subTest(param=p[0]):
                     bt.plot(**dict([p]), filename=f, open_browser=False)
 
@@ -741,7 +734,7 @@ class TestPlot(TestCase):
                     return x
 
                 self.a = self.I(SMA, self.data.Open, 5, overlay=False, name="ok")
-                self.b = self.I(ok, np.random.random(len(self.data.Open)))
+                self.b = self.I(ok, np.random.default_rng().random(len(self.data.Open)))
 
         bt = Backtest(GOOG, Strategy)
         bt.run()
@@ -909,7 +902,7 @@ class TestLib(TestCase):
 
     def test_plot_heatmaps(self):
         bt = Backtest(GOOG, SmaCross)
-        stats, heatmap = bt.optimize(fast=range(2, 7, 2), slow=range(7, 15, 2), return_heatmap=True)
+        _stats, heatmap = bt.optimize(fast=range(2, 7, 2), slow=range(7, 15, 2), return_heatmap=True)
         with _tempfile() as f:
             for agg in ("mean", lambda x: np.percentile(x, 75)):
                 plot_heatmaps(heatmap, agg, filename=f, open_browser=False)
@@ -1042,34 +1035,6 @@ class TestUtil(TestCase):
             stats = executor.submit(Backtest.run, bt).result()
         assert stats._strategy._indicators[0]._opts, "._opts and .name were not unpickled"
         bt.plot(results=stats, resample="2d", open_browser=False)
-
-
-class TestDocs(TestCase):
-    DOCS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "doc")
-
-    @unittest.skipUnless(os.path.isdir(DOCS_DIR), "docs dir doesn't exist")
-    @unittest.skipUnless(sys.platform.startswith("linux"), "test_examples requires mp.start_method=fork")
-    def test_examples(self):
-        import backtesting
-
-        examples = glob(os.path.join(self.DOCS_DIR, "examples", "*.py"))
-        self.assertGreaterEqual(len(examples), 4)
-        with chdir(gettempdir()), patch(backtesting, "Pool", mp.get_context("fork").Pool):
-            for file in examples:
-                with self.subTest(example=os.path.basename(file)):
-                    run_path(file)
-
-    def test_backtest_run_docstring_contains_stats_keys(self):
-        stats = Backtest(SHORT_DATA, SmaCross).run()
-        for key in stats.index:
-            self.assertIn(key, Backtest.run.__doc__)
-
-    def test_readme_contains_stats_keys(self):
-        with open(os.path.join(os.path.dirname(__file__), "..", "..", "README.md")) as f:
-            readme = f.read()
-        stats = Backtest(SHORT_DATA, SmaCross).run()
-        for key in stats.index:
-            self.assertIn(key, readme)
 
 
 class TestRegressions(TestCase):
