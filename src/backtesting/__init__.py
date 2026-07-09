@@ -4,6 +4,9 @@ except ImportError:
     __version__ = "?.?.?"  # Package not installed
 
 from ._util import try_
+from .backtesting import Backtest, Strategy
+
+__all__ = ["Backtest", "Pool", "Strategy", "__version__"]
 
 
 def Pool(processes=None, initializer=None, initargs=()):

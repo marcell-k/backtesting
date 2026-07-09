@@ -26,6 +26,10 @@ target-version = "py314"
 
 [tool.setuptools]
 packages = { find = { where = ["src"] } }
+include-package-data = true
+
+[tool.setuptools.package-data]
+backtesting = ["*.js"]
 
 [tool.ruff.lint]
 select = [

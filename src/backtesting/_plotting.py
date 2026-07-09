@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.resources
 import os
 import re
 import sys
@@ -48,8 +49,7 @@ from bokeh.transform import factor_cmap, transform
 
 from backtesting._util import _as_list, _data_period, _Indicator, try_
 
-with (Path(__file__).parent / "autoscale_cb.js").open() as f:
-    _AUTOSCALE_JS_CALLBACK = f.read()
+_AUTOSCALE_JS_CALLBACK = importlib.resources.files("backtesting").joinpath("autoscale_cb.js").read_text()
 
 IS_JUPYTER_NOTEBOOK = "JPY_PARENT_PID" in os.environ or "inline" in os.environ.get("MPLBACKEND", "")
 
@@ -59,7 +59,8 @@ if IS_JUPYTER_NOTEBOOK:
         "Setting Bokeh output to notebook. "
         "This may not work in Jupyter clients without JavaScript "
         "support, such as old IDEs. "
-        "Reset with `backtesting.set_bokeh_output(notebook=False)`.", stacklevel=2
+        "Reset with `backtesting.set_bokeh_output(notebook=False)`.",
+        stacklevel=2,
     )
     output_notebook()
 
@@ -158,7 +159,8 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
         require_minutes = (timespan / _MAX_CANDLES).total_seconds() // 60
         freq = freq_minutes.where(freq_minutes >= require_minutes).first_valid_index()
         warnings.warn(
-            f"Data contains too many candlesticks to plot; downsampling to {freq!r}. See `Backtest.plot(resample=...)`", stacklevel=2
+            f"Data contains too many candlesticks to plot; downsampling to {freq!r}. See `Backtest.plot(resample=...)`",
+            stacklevel=2,
         )
 
     from .lib import _EQUITY_AGG, OHLCV_AGG, TRADES_AGG
