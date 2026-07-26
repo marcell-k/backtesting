@@ -221,6 +221,10 @@ class _Data:
             arr = self.__cache[key] = cast("_Array", self.__arrays[key][: self.__len])
         return arr
 
+    def _at(self, key: str, offset: int = -1) -> float:
+        """Unwrapped scalar read, `offset` bars from current. Bypasses cache/view overhead."""
+        return self.__arrays[key][self.__len + offset]
+
     @property
     def Open(self) -> _Array:
         return self.__get_array("Open")

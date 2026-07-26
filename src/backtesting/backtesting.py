@@ -832,7 +832,7 @@ class _Broker:
     @property
     def last_price(self) -> float:
         """Price at the last (current) close."""
-        return self._data.Close[-1]
+        return self._data._at("Close")
 
     def _adjusted_price(self, size=None, price=None) -> float:
         """
@@ -870,7 +870,7 @@ class _Broker:
 
     def _process_orders(self):
         data = self._data
-        open, high, low = data.Open[-1], data.High[-1], data.Low[-1]
+        open, high, low = data._at("Open"), data._at("High"), data._at("Low")
         reprocess_orders = False
 
         # Process orders
@@ -907,7 +907,7 @@ class _Broker:
             else:
                 # Market-if-touched / market order
                 # Contingent orders always on next open
-                prev_close = data.Close[-2]
+                prev_close = data._at("Close", -2)
                 price = prev_close if self._trade_on_close and not order.is_contingent else open
                 if stop_price:
                     price = max(price, stop_price) if order.is_long else min(price, stop_price)

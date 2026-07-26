@@ -65,8 +65,8 @@ def compute_stats(
         pl = np.fromiter((t.pl for t in trades), dtype=np.float64, count=n)
         commission = np.fromiter((t._commissions for t in trades), dtype=np.float64, count=n)
         ret_pct = np.fromiter((t.pl_pct for t in trades), dtype=np.float64, count=n)
-        entry_time = pd.DatetimeIndex([t.entry_time for t in trades])
-        exit_time = pd.DatetimeIndex([t.exit_time for t in trades])
+        entry_time = index[entry_bar]
+        exit_time = index[exit_bar]
         tag = [t.tag for t in trades]
 
         trades_df = pd.DataFrame(
