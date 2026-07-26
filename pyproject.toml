@@ -5,19 +5,17 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "bokeh>=3.9.1",
-    "numpy>=2.4.6,<2.5",
-    "pandas>=3.0.3",
-    "sambo>=1.25.2",
-    "setuptools>=83.0.0",
-    "tqdm>=4.68.4",
+  "bokeh>=3.9.1",
+  "numpy>=2.4.6,<2.5",
+  "pandas>=3.0.3",
+  "sambo>=1.25.2",
+  "setuptools>=83.0.0",
+  "tqdm>=4.68.4",
 ]
 
 [tool.uv]
 package = true
-environments = [
-    "sys_platform == 'darwin'",
-]
+environments = ["sys_platform == 'darwin'"]
 
 
 [tool.ruff]
@@ -33,18 +31,50 @@ backtesting = ["*.js"]
 
 [tool.ruff.lint]
 select = [
-    "ANN", "B", "D", "E", "F", "I", "RUF", "S", "SIM", "UP",
-    "C4", "FA", "ICN", "ISC", "NPY", "PTH", "TC", "TID", "W"
+  "ANN",
+  "B",
+  "D",
+  "E",
+  "F",
+  "I",
+  "RUF",
+  "S",
+  "SIM",
+  "UP",
+  "C4",
+  "FA",
+  "ICN",
+  "ISC",
+  "NPY",
+  "PTH",
+  "TC",
+  "TID",
+  "W",
 ]
-ignore = ["ANN001", "ANN202","ANN204", "ANN401", "D100", "D101", "D102", "D103", "D104", "D107", "D203", "D213", "D212", "D205", "S101"]
+ignore = [
+  "ANN001",
+  "ANN202",
+  "ANN204",
+  "ANN401",
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D107",
+  "D203",
+  "D213",
+  "D212",
+  "D205",
+  "S101",
+]
 
 
 # --- Basedpyright configuration goes here ---
 [tool.basedpyright]
 typeCheckingMode = "standard"
 venvPath = "."
-extraPaths=["src"]
+extraPaths = ["src"]
 venv = ".venv"
-exclude=[".venv", ".git", "__pycache__", "data", "cache", ".ruff_cache"]
+exclude = [".venv", ".git", "__pycache__", "data", "cache", ".ruff_cache"]
 useLibraryCodeForTypes = false
-
