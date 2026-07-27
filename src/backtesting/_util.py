@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 try:
-    from tqdm.auto import tqdm as _tqdm
+    from tqdm import tqdm as _tqdm
 
     _tqdm = partial(_tqdm, leave=False)
 except ImportError:
