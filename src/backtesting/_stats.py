@@ -111,7 +111,8 @@ def compute_stats(
     returns = trades_df["ReturnPct"]
     durations = trades_df["Duration"]
 
-    def _round_timedelta(value, _period=_data_period(index)):
+    _period = _data_period(index)
+    def _round_timedelta(value):
         if not isinstance(value, pd.Timedelta) or not isinstance(_period, pd.Timedelta):
             return value
         resolution = getattr(_period, "resolution_string", None) or _period.resolution

@@ -5,14 +5,13 @@ import os
 import re
 import sys
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 from colorsys import hls_to_rgb, rgb_to_hls
 from functools import partial
 from itertools import combinations, cycle
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -172,7 +171,7 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
         resampled = indicator.df.fillna(np.nan).resample(freq, label="right")
         try:
             return resampled.mean()
-        except Exception:
+        except Exception:  # noqa: BLE001 - pandas' failure mode here is dtype-dependent/unspecified
             return resampled.first()
 
     indicators = [
@@ -197,7 +196,9 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
         return ((df["Size"].abs() * df["ReturnPct"]) / df["Size"].abs().sum()).sum()
 
     def _group_trades(column):
-        def f(s, new_index=pd.Index(df.index.astype(np.int64)), bars=trades[column]):
+        new_index = pd.Index(df.index.astype(np.int64))
+        bars = trades[column]
+        def f(s):
             if s.size:
                 # Via int64 because on pandas recently broken datetime
                 mean_time = int(bars.loc[s.index].astype(np.int64).mean())
@@ -211,13 +212,13 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
             trades.assign(count=1)
             .resample(freq, on="ExitTime", label="right")
             .agg(
-                dict(
-                    TRADES_AGG,
-                    ReturnPct=_weighted_returns,
-                    count="sum",
-                    EntryBar=_group_trades("EntryTime"),
-                    ExitBar=_group_trades("ExitTime"),
-                )
+                {
+                    **TRADES_AGG,
+                    "ReturnPct": _weighted_returns,
+                    "count": "sum",
+                    "EntryBar": _group_trades("EntryTime"),
+                    "ExitBar": _group_trades("ExitTime"),
+                }
             )
             .dropna()
         )
@@ -230,21 +231,21 @@ def plot(
     results: pd.Series,
     df: pd.DataFrame,
     indicators: list[_Indicator],
-    filename="",
-    plot_width=None,
-    plot_equity=True,
-    plot_return=False,
-    plot_pl=True,
-    plot_volume=True,
-    plot_drawdown=False,
-    plot_trades=True,
-    smooth_equity=False,
-    relative_equity=True,
-    superimpose=True,
-    resample=True,
-    reverse_indicators=True,
-    show_legend=True,
-    open_browser=True,
+    filename: str | None = "",
+    plot_width: int | None = None,
+    plot_equity: bool = True,
+    plot_return: bool = False,
+    plot_pl: bool = True,
+    plot_volume: bool = True,
+    plot_drawdown: bool = False,
+    plot_trades: bool = True,
+    smooth_equity: bool = False,
+    relative_equity: bool = True,
+    superimpose: bool | str = True,
+    resample: bool = True,
+    reverse_indicators: bool = True,
+    show_legend: bool = True,
+    open_browser: bool = True,
 ):
     """Like much of GUI code everywhere, this is a mess."""
     if not filename and not IS_JUPYTER_NOTEBOOK:
@@ -352,7 +353,7 @@ return this.labels[index] || "";
         fig = new_bokeh_figure(x_range=fig_ohlc.x_range, active_scroll="xwheel_zoom", active_drag="xpan", **kwargs)
         fig.xaxis.visible = False
         fig.yaxis.minor_tick_line_color = None
-        fig.yaxis.ticker.desired_num_ticks = 3
+        fig.yaxis.ticker.desired_num_ticks = 3 # type: ignore[attr-defined]
         return fig
 
     def set_tooltips(fig, tooltips=(), vline=True, renderers=()):
@@ -369,7 +370,7 @@ return this.labels[index] || "";
             HoverTool(
                 point_policy="follow_mouse",
                 renderers=renderers,
-                formatters=formatters,
+                formatters=formatters, # type: ignore[attr-defined]
                 tooltips=tooltips,
                 mode="vline" if vline else "mouse",
             )
@@ -538,7 +539,7 @@ return this.labels[index] || "";
     def _plot_volume_section() -> _figure:
         """Volume section."""
         fig = new_indicator_figure(height=70, y_axis_label="Volume")
-        fig.yaxis.ticker.desired_num_ticks = 3
+        fig.yaxis.ticker.desired_num_ticks = 3 # type: ignore[attr-defined]
         fig.xaxis.formatter = fig_ohlc.xaxis[0].formatter
         fig.xaxis.visible = True
         fig_ohlc.xaxis.visible = False  # Show only Volume's xaxis
@@ -567,7 +568,7 @@ return this.labels[index] || "";
             df.assign(_width=1)
             .set_index("datetime")
             .resample(resample_rule, label="left")
-            .agg(dict(OHLCV_AGG, _width="count"))
+            .agg({**OHLCV_AGG, "_width":"count"})
         )
 
         # Check if resampling was downsampling; error on upsampling
@@ -645,8 +646,8 @@ return this.labels[index] || "";
         ohlc_colors = colorgen()
         indicator_figs = []
 
-        for i, value in enumerate(indicators):
-            value = np.atleast_2d(value)
+        for i, indicator in enumerate(indicators):
+            value = cast("_Indicator", np.atleast_2d(indicator))
             if _too_many_dims(value):
                 continue
 
@@ -663,6 +664,7 @@ return this.labels[index] || "";
                 fig = new_indicator_figure()
                 indicator_figs.append(fig)
             tooltips = []
+            r: GlyphRenderer | None = None
             colors = value._opts["color"]
             colors = (colors and cycle(_as_list(colors))) or (cycle([next(ohlc_colors)]) if is_overlay else colorgen())
 
@@ -715,7 +717,7 @@ return this.labels[index] || "";
                     else:
                         r = fig.line("index", source_name, source=source, line_color=color, line_width=1.3, **kwargs)
                     # Add dashed centerline just because
-                    mean = try_(lambda: float(pd.Series(arr).mean()), default=np.nan)
+                    mean = try_(lambda arr=arr: float(pd.Series(arr).mean()), default=np.nan)
                     if not np.isnan(mean) and (
                         abs(mean) < 0.1 or round(abs(mean), 1) == 0.5 or round(abs(mean), -1) in (50, 100, 200)
                     ):
@@ -741,6 +743,7 @@ return this.labels[index] || "";
 
     # Construct figure ...
 
+    fig_volume: _figure | None = None
     if plot_equity:
         _plot_equity_section()
 
@@ -777,6 +780,7 @@ return this.labels[index] || "";
 
     custom_js_args = {"ohlc_range": fig_ohlc.y_range, "source": source}
     if plot_volume:
+        assert fig_volume is not None
         custom_js_args.update(volume_range=fig_volume.y_range)
 
     fig_ohlc.x_range.js_on_change("end", CustomJS(args=custom_js_args, code=_AUTOSCALE_JS_CALLBACK))
@@ -838,7 +842,7 @@ def plot_heatmaps(
     open_browser: bool = True,
 ):
     if not (isinstance(heatmap, pd.Series) and isinstance(heatmap.index, pd.MultiIndex)):
-        raise ValueError("heatmap must be heatmap Series as returned by `Backtest.optimize(..., return_heatmap=True)`")
+        raise TypeError("heatmap must be heatmap Series as returned by `Backtest.optimize(..., return_heatmap=True)`")
     if len(heatmap.index.levels) < 2:
         raise ValueError("`plot_heatmap()` requires at least two optimization variables to plot")
 

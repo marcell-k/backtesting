@@ -11,7 +11,7 @@ from __future__ import annotations
 import sys
 import warnings
 from abc import ABCMeta, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -92,14 +92,14 @@ class Strategy(metaclass=ABCMeta):
 
     def I(
         self,
-        func: Callable,
-        *args,
-        name=None,
-        plot=True,
-        overlay=None,
-        color=None,
-        scatter=False,
-        **kwargs,
+        func: Callable[..., Any],
+        *args: Any,
+        name: str | Sequence[str] | None = None,
+        plot: bool = True,
+        overlay: bool | None = None,
+        color: str | Sequence[str] | None = None,
+        scatter: bool = False,
+        **kwargs: Any,
     ) -> np.ndarray:
         """
         Declare an indicator. An indicator is just an array of values
@@ -159,10 +159,12 @@ class Strategy(metaclass=ABCMeta):
             name = f"{func_name}({params})" if params else f"{func_name}"
         elif isinstance(name, str):
             name = _format_name(name)
-        elif try_(lambda: all(isinstance(item, str) for item in name), False):
-            name = [_format_name(item) for item in name]
         else:
-            raise TypeError(f"Unexpected `name=` type {type(name)}; expected `str` or `Sequence[str]`")
+            name_seq: Sequence[str] = name
+            if try_(lambda: all(isinstance(item, str) for item in name_seq) ,False):
+                name = [_format_name(item) for item in name_seq]
+            else:
+                raise TypeError(f"Unexpected `name=` type {type(name)}; expected `str` or `Sequence[str]`")
 
         try:
             value = func(*args, **kwargs)
@@ -173,11 +175,17 @@ class Strategy(metaclass=ABCMeta):
             value = value.values.T
 
         if value is not None:
-            value = try_(lambda: np.asarray(value, order="C"), None)
-        is_arraylike = bool(value is not None and value.shape)
+            _raw_value = value
+            value = try_(lambda: np.asarray(_raw_value, order="C"), None)
+        if value is None or not value.shape:
+            raise ValueError(
+                "Indicators must return (optionally a tuple of) numpy.arrays of same "
+                f'length as `data` (data shape: {self._data.Close.shape}; indicator "{name}" '
+                f"shape: {getattr(value, 'shape', '')}, returned value: {value})"
+            )
 
         # Optionally flip the array if the user returned e.g. `df.values`
-        if is_arraylike and np.argmax(value.shape) == 0:
+        if np.argmax(value.shape) == 0:
             value = value.T
 
         if isinstance(name, list) and (np.atleast_2d(value).shape[0] != len(name)):
@@ -186,11 +194,11 @@ class Strategy(metaclass=ABCMeta):
                 f"of arrays the indicator returns ({value.shape[0]})."
             )
 
-        if not is_arraylike or not 1 <= value.ndim <= 2 or value.shape[-1] != len(self._data.Close):
+        if not 1 <= value.ndim <= 2 or value.shape[-1] != len(self._data.Close):
             raise ValueError(
                 "Indicators must return (optionally a tuple of) numpy.arrays of same "
                 f'length as `data` (data shape: {self._data.Close.shape}; indicator "{name}" '
-                f"shape: {getattr(value, 'shape', '')}, returned value: {value})"
+                f"shape: {value.shape}, returned_value: {value}"
             )
 
         if overlay is None and np.issubdtype(value.dtype, np.number):
@@ -229,7 +237,7 @@ class Strategy(metaclass=ABCMeta):
         """
 
     @abstractmethod
-    def next(self):
+    def next(self) -> None:
         """
         Main strategy runtime method, called as each new
         `backtesting.backtesting.Strategy.data`
@@ -433,9 +441,12 @@ class Order:
         return self
 
     def __repr__(self) -> str:
+        def _round(value: object) -> object:
+            return round(value, 5) if isinstance(value, (int, float)) and not isinstance(value, bool) else value
+
         return "<Order {}>".format(
             ", ".join(
-                f"{param}={try_(lambda: round(value, 5), value)!r}"
+                f"{param}={_round(value)!r}"
                 for param, value in (
                     ("size", self.__size),
                     ("limit", self.__limit_price),
@@ -736,7 +747,7 @@ class _Broker:
         data,
         cash,
         spread,
-        commission,
+        commission: float | tuple[float, float] | Callable[[float, float], float],
         margin,
         trade_on_close,
         hedging,
@@ -748,12 +759,15 @@ class _Broker:
         self._data: _Data = data
         self._cash = cash
 
+        self._commission: Callable[[float, float], float]
+        self._commission_fixed: float
+        self._commission_relative: float
         if callable(commission):
             self._commission = commission
         else:
-            try:
+            if isinstance(commission, tuple):
                 self._commission_fixed, self._commission_relative = commission
-            except TypeError:
+            else:
                 self._commission_fixed, self._commission_relative = 0, commission
             assert self._commission_fixed >= 0, "Need fixed cash commission in $ >= 0"
             assert -0.1 <= self._commission_relative < 0.1, (
@@ -774,7 +788,7 @@ class _Broker:
         self.position = Position(self)
         self.closed_trades: list[Trade] = []
 
-    def _commission_func(self, order_size, price):
+    def _commission_func(self, order_size: float, price: float) -> float:
         return self._commission_fixed + abs(order_size) * price * self._commission_relative
 
     def __repr__(self) -> str:
@@ -834,12 +848,13 @@ class _Broker:
         """Price at the last (current) close."""
         return self._data._at("Close")
 
-    def _adjusted_price(self, size=None, price=None) -> float:
+    def _adjusted_price(self, size: float | None = None, price: float | None = None) -> float:
         """
         Long/short `price`, adjusted for spread.
         In long positions, the adjusted price is a fraction higher, and vice versa.
         """
-        return (price or self.last_price) * (1 + copysign(self._spread, size))
+        spread = self._spread if size is None or size >= 0 else -self._spread
+        return (price or self.last_price) * (1 + spread)
 
     @property
     def equity(self) -> float:
@@ -930,6 +945,7 @@ class _Broker:
                     self._reduce_trade(trade, price, size, time_index)
                     assert order.size != -_prev_size or trade not in self.trades
                     if price == stop_price:
+                        assert trade._sl_order is not None
                         # Set SL back on the order for stats._trades["SL"]
                         trade._sl_order._replace(stop_price=stop_price)
                 if order in (trade._sl_order, trade._tp_order):
@@ -1170,7 +1186,7 @@ class Backtest:
         *,
         cash: float = 10_000,
         spread: float = 0.0,
-        commission: float | tuple[float, float] = 0.0,
+        commission: float | tuple[float, float] | Callable[[float, float], float] = 0.0,
         margin: float = 1.0,
         trade_on_close=False,
         hedging=False,
@@ -1240,7 +1256,7 @@ class Backtest:
             _Broker,
             cash=cash,
             spread=spread,
-            commission=commission,
+            commission=cast("float | tuple[float, float] | Callable[[float, float], float]", commission),
             margin=margin,
             trade_on_close=trade_on_close,
             hedging=hedging,
@@ -1330,7 +1346,7 @@ class Backtest:
         *,
         maximize: str | Callable[[pd.Series], float] = "SQN",
         method: str = "grid",
-        max_tries: int | float | None = None,
+        max_tries: float | None = None,
         constraint: Callable[[dict], bool] | None = None,
         return_heatmap: bool = False,
         return_optimization: bool = False,
@@ -1398,28 +1414,34 @@ class Backtest:
         if not kwargs:
             raise ValueError("Need some strategy parameters to optimize")
 
-        maximize_key = None
+        maximize_key: str | None = None
+        maximize_func: Callable[[pd.Series], float]
         if isinstance(maximize, str):
             maximize_key = str(maximize)
             if maximize not in dummy_stats().index:
                 raise ValueError("`maximize`, if str, must match a key in pd.Series result of backtest.run()")
 
-            def _maximize_by_key(stats: pd.Series, _key=maximize) -> float:
+            def _maximize_by_key(stats: pd.Series, _key: str = maximize) -> float:
                 return stats[_key]
 
-            maximize = _maximize_by_key
+            maximize_func = _maximize_by_key
+        else:
+            maximize_func = maximize
 
-        assert callable(maximize), maximize
+        assert callable(maximize_func), maximize_func
 
         have_constraint = bool(constraint)
+        constraint_func: Callable[[dict], bool]
         if constraint is None:
 
             def _constraint_always_true(_) -> bool:
                 return True
 
-            constraint = _constraint_always_true
+            constraint_func = _constraint_always_true
+        else:
+            constraint_func = constraint
 
-        assert callable(constraint), constraint
+        assert callable(constraint_func), constraint_func
 
         if method == "skopt":
             method = "sambo"
@@ -1448,7 +1470,7 @@ class Backtest:
                 size = sum(
                     1
                     for p in product(*(zip(repeat(k), _tuple(v)) for k, v in kwargs.items()))
-                    if constraint(AttrDict(p))
+                    if constraint_func(AttrDict(p))
                 )
             return size
 
@@ -1460,7 +1482,7 @@ class Backtest:
                 for params in (
                     AttrDict(params) for params in product(*(zip(repeat(k), _tuple(v)) for k, v in kwargs.items()))
                 )
-                if constraint(params) and rand() <= grid_frac
+                if constraint_func(params) and rand() <= grid_frac
             ]
             if not param_combos:
                 raise ValueError("No admissible parameter combinations to test")
@@ -1492,7 +1514,7 @@ class Backtest:
                 for param_batch, result in zip(_batch(param_combos), results, strict=False):
                     for params, stats in zip(param_batch, result, strict=False):
                         if stats is not None:
-                            heatmap[tuple(params.values())] = maximize(stats)
+                            heatmap[tuple(params.values())] = maximize_func(stats)
 
             if pd.isnull(heatmap).all():
                 # No trade was made in any of the runs. Just make a random
@@ -1518,7 +1540,7 @@ class Backtest:
             )
 
             dimensions = []
-            for _key, values in kwargs.items():
+            for values in kwargs.values():
                 values = np.asarray(values)
                 if values.dtype.kind in "mM":  # timedelta, datetime64
                     # these dtypes are unsupported in SAMBO, so convert to raw int
@@ -1535,9 +1557,9 @@ class Backtest:
             # Avoid recomputing re-evaluations
             @lru_cache
             def memoized_run(tup):
-                nonlocal maximize, self
+                nonlocal maximize_func, self
                 stats = self.run(**dict(tup))
-                return -maximize(stats)
+                return -maximize_func(stats)
 
             progress = iter(
                 _tqdm(
@@ -1551,14 +1573,14 @@ class Backtest:
             _names = tuple(kwargs.keys())
 
             def objective_function(x):
-                nonlocal progress, memoized_run, constraint, _names
+                nonlocal progress, memoized_run, _names
                 next(progress)
                 value = memoized_run(tuple(zip(_names, x, strict=False)))
                 return 0 if np.isnan(value) else value
 
             def cons(x):
-                nonlocal constraint, _names
-                return constraint(AttrDict(zip(_names, x, strict=False)))
+                nonlocal constraint_func, _names
+                return constraint_func(AttrDict(zip(_names, x, strict=False)))
 
             res = sambo.minimize(
                 fun=objective_function,
@@ -1720,21 +1742,3 @@ class Backtest:
             open_browser=open_browser,
         )
 
-
-# NOTE: Don't put anything public below this __all__ list
-
-__all__ = [
-    getattr(v, "__name__", k)
-    for k, v in globals().items()  # export
-    if (
-        (
-            (
-                callable(v) and getattr(v, "__module__", None) == __name__
-            )  # callables from this module; getattr for Python 3.9;
-            or k.isupper()
-        )  # or CONSTANTS
-        and not getattr(v, "__name__", k).startswith("_")
-    )
-]  # neither marked internal
-
-# NOTE: Don't put anything public below here. See above.
