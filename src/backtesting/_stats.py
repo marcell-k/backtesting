@@ -21,10 +21,9 @@ def compute_drawdown_duration_peaks(dd: pd.Series):
         return (dd.replace(0, np.nan),) * 2
 
     df["duration"] = df["iloc"].map(dd.index.__getitem__) - df["prev"].map(dd.index.__getitem__)
-    df["peak_dd"] = df.apply(lambda row: dd.iloc[row["prev"] : row["iloc"] + 1].max(), axis=1)
+    df["peak_dd"] = np.maximum.reduceat(dd.to_numpy(), df["prev"].to_numpy() + 1)
     df = df.reindex(dd.index)
     return df["duration"], df["peak_dd"]
-
 
 def geometric_mean(returns: pd.Series) -> float:
     returns = returns.fillna(0) + 1

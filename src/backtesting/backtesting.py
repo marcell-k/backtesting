@@ -28,7 +28,6 @@ import numpy as np
 import pandas as pd
 from numpy.random import default_rng
 
-from ._plotting import plot
 from ._stats import compute_stats, dummy_stats
 from ._util import (
     SharedMemoryManager,
@@ -884,6 +883,8 @@ class _Broker:
             raise _OutOfMoneyError
 
     def _process_orders(self):
+        if not self.orders:
+            return
         data = self._data
         open, high, low = data._at("Open"), data._at("High"), data._at("Low")
         reprocess_orders = False
@@ -1269,6 +1270,7 @@ class Backtest:
 
     def run(self, **kwargs) -> pd.Series:
         """Run the backtest. Returns `pd.Series` with results and statistics."""
+        progress_bar = kwargs.pop("progress_bar", True)
         data = _Data(self._data.copy(deep=False))
         broker: _Broker = self._broker(data=data)
         strategy: Strategy = self._strategy(broker, data, kwargs)
@@ -1286,13 +1288,16 @@ class Backtest:
         # Disable "invalid value encountered in ..." warnings. Comparison
         # np.nan >= 3 is not invalid; it's False.
         with np.errstate(invalid="ignore"):
-            for i in _tqdm(
-                range(start, len(self._data)),
-                desc=self.run.__qualname__,
-                unit="bar",
-                mininterval=2,
-                miniters=100,
-            ):
+            bar_range = range(start, len(self._data))
+            if progress_bar:
+                bar_range = _tqdm(
+                    bar_range,
+                    desc=self.run.__qualname__,
+                    unit="bar",
+                    mininterval=2,
+                    miniters=100
+                )
+            for i in bar_range:
                 # Prepare data and indicators for `next` call
                 data._set_length(i + 1)
                 for attr, indicator in indicator_attrs:
@@ -1720,6 +1725,8 @@ class Backtest:
             if self._results is None:
                 raise RuntimeError("First issue `backtest.run()` to obtain results.")
             results = self._results
+
+        from ._plotting import plot
 
         return plot(
             results=results,
