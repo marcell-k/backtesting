@@ -13,6 +13,9 @@ dependencies = [
   "tqdm>=4.68.4",
 ]
 
+[dependency-groups]
+dev = ["py-spy>=0.4.2"]
+
 [tool.uv]
 package = true
 environments = ["sys_platform == 'darwin'"]
