@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from bokeh.models.plots import GridPlot
 import contextlib
 from collections.abc import Sequence
 from copy import copy
@@ -89,7 +91,7 @@ class Strategy(metaclass=ABCMeta):
             setattr(self, k, v)
         return params
 
-    def I(
+    def I(  # noqa: E743
         self,
         func: Callable[..., Any],
         *args: Any,
@@ -160,7 +162,7 @@ class Strategy(metaclass=ABCMeta):
             name = _format_name(name)
         else:
             name_seq: Sequence[str] = name
-            if try_(lambda: all(isinstance(item, str) for item in name_seq) ,False):
+            if try_(lambda: all(isinstance(item, str) for item in name_seq), False):
                 name = [_format_name(item) for item in name_seq]
             else:
                 raise TypeError(f"Unexpected `name=` type {type(name)}; expected `str` or `Sequence[str]`")
@@ -221,7 +223,7 @@ class Strategy(metaclass=ABCMeta):
         return value
 
     @abstractmethod
-    def init(self):
+    def init(self) -> None:
         """
         Initialize the strategy.
         Override this method.
@@ -393,7 +395,7 @@ class Position:
         """True if the position is short (position size is negative)."""
         return self.size < 0
 
-    def close(self, portion: float = 1.0):
+    def close(self, portion: float = 1.0) -> None:
         """Close portion of position by closing `portion` of each active trade. See `Trade.close`."""
         for trade in self.__broker.trades:
             trade.close(portion)
@@ -459,7 +461,7 @@ class Order:
             )
         )
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Cancel the order."""
         self.__broker.orders.remove(self)
         trade = self.__parent_trade
@@ -503,11 +505,11 @@ class Order:
         return self.__tp_price
 
     @property
-    def parent_trade(self):
+    def parent_trade(self) -> Trade | None:
         return self.__parent_trade
 
     @property
-    def tag(self):
+    def tag(self) -> object:
         """
         Arbitrary value (such as a string) which, if set, enables tracking
         of this order and the associated `Trade` (see `Trade.tag`).
@@ -519,17 +521,17 @@ class Order:
     # Extra properties
 
     @property
-    def is_long(self):
+    def is_long(self) -> bool:
         """True if the order is long (order size is positive)."""
         return self.__size > 0
 
     @property
-    def is_short(self):
+    def is_short(self) -> bool:
         """True if the order is short (order size is negative)."""
         return self.__size < 0
 
     @property
-    def is_contingent(self):
+    def is_contingent(self) -> bool:
         """
         True for [contingent] orders, i.e. [OCO] stop-loss and take-profit bracket orders
         placed upon an active trade. Remaining contingent orders are canceled when
@@ -577,7 +579,7 @@ class Trade:
     def _copy(self, **kwargs):
         return copy(self)._replace(**kwargs)
 
-    def close(self, portion: float = 1.0):
+    def close(self, portion: float = 1.0) -> None:
         """Place new `Order` to close `portion` of the trade at next market price."""
         assert 0 < portion <= 1, "portion must be a fraction between 0 and 1"
         # Ensure size is an int to avoid rounding errors on 32-bit OS
@@ -588,7 +590,7 @@ class Trade:
     # Fields getters
 
     @property
-    def size(self):
+    def size(self) -> int:
         """Trade size (volume; negative for short trades)."""
         return self.__size
 
@@ -616,7 +618,7 @@ class Trade:
         return self.__exit_bar
 
     @property
-    def tag(self):
+    def tag(self) -> str:
         """
         A tag value inherited from the `Order` that opened
         this trade.
@@ -660,17 +662,17 @@ class Trade:
         return self.__broker._data.index[self.__exit_bar]
 
     @property
-    def is_long(self):
+    def is_long(self) -> bool:
         """True if the trade is long (trade size is positive)."""
         return self.__size > 0
 
     @property
-    def is_short(self):
+    def is_short(self) -> bool:
         """True if the trade is short (trade size is negative)."""
         return not self.is_long
 
     @property
-    def pl(self):
+    def pl(self) -> float:
         """
         Trade profit (positive) or loss (negative) in cash units.
         Commissions are reflected only after the Trade is closed.
@@ -679,7 +681,7 @@ class Trade:
         return (self.__size * (price - self.__entry_price)) - self._commissions
 
     @property
-    def pl_pct(self):
+    def pl_pct(self) -> float:
         """Trade profit (positive) or loss (negative) in percent relative to trade entry price."""
         price = self.__exit_price or self.__broker.last_price
         gross_pl_pct = copysign(1, self.__size) * (price / self.__entry_price - 1)
@@ -689,7 +691,7 @@ class Trade:
         return gross_pl_pct - commission_pct
 
     @property
-    def value(self):
+    def value(self) -> float:
         """Trade total value in cash (volume * price)."""
         price = self.__exit_price or self.__broker.last_price
         return abs(self.__size) * price
@@ -697,7 +699,7 @@ class Trade:
     # SL/TP management API
 
     @property
-    def sl(self):
+    def sl(self) -> float | None:
         """
         Stop-loss price at which to close the trade.
 
@@ -708,11 +710,11 @@ class Trade:
         return self.__sl_order and self.__sl_order.stop
 
     @sl.setter
-    def sl(self, price: float):
+    def sl(self, price: float) -> None:
         self.__set_contingent("sl", price)
 
     @property
-    def tp(self):
+    def tp(self) -> float | None:
         """
         Take-profit price at which to close the trade.
 
@@ -1290,13 +1292,7 @@ class Backtest:
         with np.errstate(invalid="ignore"):
             bar_range = range(start, len(self._data))
             if progress_bar:
-                bar_range = _tqdm(
-                    bar_range,
-                    desc=self.run.__qualname__,
-                    unit="bar",
-                    mininterval=2,
-                    miniters=100
-                )
+                bar_range = _tqdm(bar_range, desc=self.run.__qualname__, unit="bar", mininterval=2, miniters=100)
             for i in bar_range:
                 # Prepare data and indicators for `next` call
                 data._set_length(i + 1)
@@ -1433,7 +1429,8 @@ class Backtest:
         else:
             maximize_func = maximize
 
-        assert callable(maximize_func), maximize_func
+        if not callable(maximize_func):
+            raise TypeError(f"`maximize` must be a string key or a callable, got {maximize_func!r}")
 
         have_constraint = bool(constraint)
         constraint_func: Callable[[dict], bool]
@@ -1446,7 +1443,8 @@ class Backtest:
         else:
             constraint_func = constraint
 
-        assert callable(constraint_func), constraint_func
+        if not callable(constraint_func):
+            raise TypeError(f"`constraint` must be a callable, got {constraint_func!r}")
 
         if method == "skopt":
             method = "sambo"
@@ -1619,7 +1617,7 @@ class Backtest:
         return output
 
     @staticmethod
-    def _mp_task(arg):
+    def _mp_task(arg) -> list[Any | None]:
         bt, data_shm, params_batch = arg
         bt._data, shm = SharedMemoryManager.shm2df(data_shm)
         try:
@@ -1650,7 +1648,7 @@ class Backtest:
         reverse_indicators=False,
         show_legend=True,
         open_browser=True,
-    ):
+    ) -> GridPlot:
         """
         Plot the progression of the last backtest run.
 
@@ -1706,7 +1704,7 @@ class Backtest:
 
         If `resample` is `True`, the OHLC data is resampled in a way that
         makes the upper number of candles for Bokeh to plot limited to 10_000.
-        
+
         If `reverse_indicators` is `True`, the indicators below the OHLC chart
         are plotted in reverse order of declaration.
 
@@ -1748,4 +1746,3 @@ class Backtest:
             show_legend=show_legend,
             open_browser=open_browser,
         )
-

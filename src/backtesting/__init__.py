@@ -1,15 +1,10 @@
-try:
-    from ._version import version as __version__
-except ImportError:
-    __version__ = "?.?.?"  # Package not installed
-
 from ._util import try_
 from .backtesting import Backtest, Strategy
 
-__all__ = ["Backtest", "Pool", "Strategy", "__version__"]
+__all__ = ["Backtest", "Pool", "Strategy"]
 
 
-def Pool(processes=None, initializer=None, initargs=()):
+def Pool(processes=None, initializer=None, initargs=()):  # noqa
     import multiprocessing as mp
     import sys
 

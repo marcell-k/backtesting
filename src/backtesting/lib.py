@@ -1,21 +1,8 @@
-"""
-Collection of common building blocks, helper auxiliary functions and
-composable strategy classes for reuse.
-
-Intended for simple missing-link procedures, not reinventing
-of better-suited, state-of-the-art, fast libraries,
-such as TA-Lib, Tulipy, PyAlgoTrade, NumPy, SciPy ...
-
-Please raise ideas for additions to this collection on the [issue tracker].
-
-[issue tracker]: https://github.com/kernc/backtesting.py
-"""
-
 from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Generator, Sequence
@@ -26,7 +13,6 @@ from numbers import Number
 import numpy as np
 import pandas as pd
 
-from ._plotting import plot_heatmaps as _plot_heatmaps
 from ._stats import compute_stats as _compute_stats
 from ._util import SharedMemoryManager, _Array, _as_str, _batch, _tqdm, patch
 from .backtesting import Backtest, Strategy
@@ -34,7 +20,7 @@ from .backtesting import Backtest, Strategy
 __pdoc__ = {}
 
 
-OHLCV_AGG = OrderedDict(
+OHLCV_AGG: OrderedDict[str, str] = OrderedDict(
     (
         ("Open", "first"),
         ("High", "max"),
@@ -77,7 +63,7 @@ _EQUITY_AGG = {
 }
 
 
-def barssince(condition: Sequence[bool], default=np.inf) -> int:
+def barssince(condition: Sequence[bool], default: int | float = np.inf) -> int | float:
     """
     Return the number of bars since `condition` sequence was last `True`,
     or if never, return `default`.
@@ -108,20 +94,16 @@ def crossover(series1: Sequence, series2: Sequence) -> bool:
         >>> crossover(self.data.Close, self.sma)
         True
     """
-    series1 = (
-        series1.values
-        if isinstance(series1, pd.Series)
-        else (series1, series1)
-        if isinstance(series1, Number)
-        else series1
-    )
-    series2 = (
-        series2.values
-        if isinstance(series2, pd.Series)
-        else (series2, series2)
-        if isinstance(series2, Number)
-        else series2
-    )
+
+    def _normalize(s):
+        if isinstance(s, pd.Series):
+            return s.values
+        if isinstance(s, Number):
+            return (s, s)
+        return s
+
+    series1 = _normalize(series1)
+    series2 = _normalize(series2)
     try:
         return series1[-2] < series2[-2] and series1[-1] > series2[-1]  # type: ignore
     except IndexError:
@@ -141,7 +123,7 @@ def plot_heatmaps(
     Plot a grid of heatmaps, one for every pair of parameters in `heatmap`.
     See example in [the tutorial].
 
-    [the tutorial]: https://kernc.github.io/backtesting.py/doc/examples/Parameter%20Heatmap%20&%20Optimization.html#plot-heatmap  # noqa: E501
+    [the tutorial]: https://kernc.github.io/backtesting.py/doc/examples/Parameter%20Heatmap%20&%20Optimization.html#plot-heatmap
 
     `heatmap` is a Series as returned by
     `backtesting.backtesting.Backtest.optimize` when its parameter
@@ -159,10 +141,12 @@ def plot_heatmaps(
     [plot_objective]: \
         https://sambo-optimization.github.io/doc/sambo/plot.html#sambo.plot.plot_objective
     """
+    from ._plotting import plot_heatmaps as _plot_heatmaps
+
     return _plot_heatmaps(heatmap, agg, ncols, filename, plot_width, open_browser)
 
 
-def quantile(series: Sequence, quantile: None | float = None):
+def quantile(series: Sequence, quantile: float | None = None):
     """
     If `quantile` is `None`, return the quantile _rank_ of the last
     value of `series` wrt former series values.
@@ -302,8 +286,10 @@ http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
     """
     if func is None:
 
-        def func(x, *_, **__):
+        def _identity(x, *_, **__):
             return x
+
+        func = _identity
 
     assert callable(func), "resample_apply(func=) must be callable"
 
@@ -313,6 +299,7 @@ http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
         )
         series = series.s
 
+    series = cast("pd.Series | pd.DataFrame", series)
     if agg is None:
         agg = OHLCV_AGG.get(getattr(series, "name", ""), "last")
         if isinstance(series, pd.DataFrame):
@@ -338,11 +325,13 @@ http://pandas.pydata.org/pandas-docs/stable/timeseries.html#offset-aliases
     def wrap_func(resampled, *args, **kwargs):
         result = func(resampled, *args, **kwargs)
         if not isinstance(result, pd.DataFrame) and not isinstance(result, pd.Series):
-            result = np.asarray(result)
-            if result.ndim == 1:
-                result = pd.Series(result, name=resampled.name)
-            elif result.ndim == 2:
-                result = pd.DataFrame(result.T)
+            arr = np.asarray(result)
+            if arr.ndim == 1:
+                result = pd.Series(arr, name=resampled.name)
+            elif arr.ndim == 2:
+                result = pd.DataFrame(arr.T)
+            else:
+                raise ValueError(f"Unexpected result ndim={arr.ndim} from resample_apply(func=)")
         # Resample back to data index
         if not isinstance(result.index, pd.DatetimeIndex):
             result.index = resampled.index
@@ -489,7 +478,7 @@ class TrailingStrategy(Strategy):
     """
 
     __n_atr = 6.0
-    __atr = None
+    __atr: np.ndarray | None = None
 
     def init(self):
         super().init()
@@ -526,6 +515,7 @@ class TrailingStrategy(Strategy):
         self.set_trailing_sl(pct_in_atr)
 
     def next(self):
+        assert self.__atr is not None, "Call init() (or set_atr_periods()) first"
         super().next()
         # Can't use index=-1 because self.__atr is not an Indicator type
         index = len(self.data) - 1
@@ -538,7 +528,7 @@ class TrailingStrategy(Strategy):
 
 class FractionalBacktest(Backtest):
     """
-    A `backtesting.backtesting.Backtest` that supports fractional share trading
+    The `backtesting.backtesting.Backtest` that supports fractional share trading
     by simple composition. It applies roughly the transformation:
 
         data = (data * fractional_unit).assign(Volume=data.Volume / fractional_unit)
@@ -639,8 +629,9 @@ class MultiBacktest:
         return df
 
     @staticmethod
-    def _mp_task_run(args):
+    def _mp_task_run(args) -> list[Any | None]:
         data_shm, strategy, bt_kwargs, run_kwargs = args
+        strategy = cast("type[Strategy]", strategy)
         dfs, shms = zip(*(SharedMemoryManager.shm2df(i) for i in data_shm), strict=False)
         try:
             return [
@@ -653,7 +644,7 @@ class MultiBacktest:
 
     def optimize(self, **kwargs) -> pd.DataFrame:
         """
-        Wraps `backtesting.backtesting.Backtest.optimize`, but returns `pd.DataFrame` with
+        Wrap `backtesting.backtesting.Backtest.optimize`, but returns `pd.DataFrame` with
         currency indexes in columns.
 
             heamap: pd.DataFrame = btm.optimize(...)
@@ -684,6 +675,4 @@ __all__ = [
         )  # or CONSTANTS
         and not getattr(v, "__name__", k).startswith("_")
     )
-]  # neither marked internal
-
-# NOTE: Don't put anything below here. See above.
+]  # pyright: ignore[reportUnsupportedDunderAll]

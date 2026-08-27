@@ -64,7 +64,7 @@ if IS_JUPYTER_NOTEBOOK:
     output_notebook()
 
 
-def set_bokeh_output(notebook=False):
+def set_bokeh_output(notebook: bool = False) -> None:
     """
     Set Bokeh to output either to a file or Jupyter notebook.
     By default, Bokeh outputs to notebook if running from within
@@ -74,13 +74,13 @@ def set_bokeh_output(notebook=False):
     IS_JUPYTER_NOTEBOOK = notebook
 
 
-def _windos_safe_filename(filename):
+def _windos_safe_filename(filename: str) -> str:
     if sys.platform.startswith("win"):
         return re.sub(r"[^a-zA-Z0-9,_-]", "_", filename.replace("=", "-"))
     return filename
 
 
-def _bokeh_reset(filename=None):
+def _bokeh_reset(filename: str | None = None) -> None:
     curstate().reset()
     if filename:
         if not filename.endswith(".html"):
@@ -171,7 +171,7 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
         resampled = indicator.df.fillna(np.nan).resample(freq, label="right")
         try:
             return resampled.mean()
-        except Exception:  # noqa: BLE001 - pandas' failure mode here is dtype-dependent/unspecified
+        except Exception:
             return resampled.first()
 
     indicators = [
@@ -198,6 +198,7 @@ def _maybe_resample_data(resample_rule, df, indicators, equity_data, trades):
     def _group_trades(column):
         new_index = pd.Index(df.index.astype(np.int64))
         bars = trades[column]
+
         def f(s):
             if s.size:
                 # Via int64 because on pandas recently broken datetime
@@ -353,7 +354,7 @@ return this.labels[index] || "";
         fig = new_bokeh_figure(x_range=fig_ohlc.x_range, active_scroll="xwheel_zoom", active_drag="xpan", **kwargs)
         fig.xaxis.visible = False
         fig.yaxis.minor_tick_line_color = None
-        fig.yaxis.ticker.desired_num_ticks = 3 # type: ignore[attr-defined]
+        fig.yaxis.ticker.desired_num_ticks = 3  # type: ignore[attr-defined]
         return fig
 
     def set_tooltips(fig, tooltips=(), vline=True, renderers=()):
@@ -370,7 +371,7 @@ return this.labels[index] || "";
             HoverTool(
                 point_policy="follow_mouse",
                 renderers=renderers,
-                formatters=formatters, # type: ignore[attr-defined]
+                formatters=formatters,  # type: ignore[attr-defined]
                 tooltips=tooltips,
                 mode="vline" if vline else "mouse",
             )
@@ -539,7 +540,7 @@ return this.labels[index] || "";
     def _plot_volume_section() -> _figure:
         """Volume section."""
         fig = new_indicator_figure(height=70, y_axis_label="Volume")
-        fig.yaxis.ticker.desired_num_ticks = 3 # type: ignore[attr-defined]
+        fig.yaxis.ticker.desired_num_ticks = 3  # type: ignore[attr-defined]
         fig.xaxis.formatter = fig_ohlc.xaxis[0].formatter
         fig.xaxis.visible = True
         fig_ohlc.xaxis.visible = False  # Show only Volume's xaxis
@@ -568,12 +569,12 @@ return this.labels[index] || "";
             df.assign(_width=1)
             .set_index("datetime")
             .resample(resample_rule, label="left")
-            .agg({**OHLCV_AGG, "_width":"count"})
+            .agg({**OHLCV_AGG, "_width": "count"})
         )
 
         # Check if resampling was downsampling; error on upsampling
-        orig_freq = _data_period(df["datetime"])
-        resample_freq = _data_period(df2.index)
+        orig_freq = cast("pd.Timedelta", _data_period(df["datetime"]))
+        resample_freq = cast("pd.Timedelta", _data_period(df2.index))
         if resample_freq < orig_freq:
             raise ValueError("Invalid value for `superimpose`: Upsampling not supported.")
         if resample_freq == orig_freq:

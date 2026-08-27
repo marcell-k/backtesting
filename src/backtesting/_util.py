@@ -8,13 +8,13 @@ from functools import partial
 from itertools import chain
 from multiprocessing import shared_memory as _mpshm
 from numbers import Number
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 
 try:
-    from tqdm import tqdm as _tqdm
+    from tqdm import tqdm as _tqdm  # type: ignore
 
     _tqdm = partial(_tqdm, leave=False)
 except ImportError:
@@ -119,7 +119,8 @@ class _Array(np.ndarray):
     # when (un-)pickling.
     def __reduce__(self):
         value = super().__reduce__()
-        return (*value[:2], value[2] + (self.__dict__,))
+        state = value[2] if isinstance(value[2], tuple) else (value[2],)
+        return (*value[:2], (*state, self.__dict__))
 
     def __setstate__(self, state):
         self.__dict__.update(state[-1])
@@ -316,7 +317,7 @@ class SharedMemoryManager:
     _DF_INDEX_COL = "__bt_index"
 
     @staticmethod
-    def shm2df(data_shm):
+    def shm2df(data_shm) -> tuple[Any, list[SharedMemory]]:
         shm = [SharedMemory(name=name, create=False, track=False) for _, name, _, _ in data_shm]
         df = pd.DataFrame(
             {

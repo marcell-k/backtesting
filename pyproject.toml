@@ -1,3 +1,7 @@
+[build-system]
+requires = ["maturin>=1.14"]
+build-backend = "maturin"
+
 [project]
 name = "backtesting"
 version = "0.1.0"
@@ -14,7 +18,16 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["py-spy>=0.4.2"]
+dev = [
+  "basedpyright>=1.39.10",
+  "joblib>=1.5.3",
+  "maturin>=1.14.1",
+  "py-spy>=0.4.2",
+  "pytest>=9.1.1",
+  "ruff>=0.16.4",
+  "sambo>=1.25.2",
+  "scikit-learn>=1.9.0",
+]
 
 [tool.uv]
 package = true
@@ -25,12 +38,10 @@ environments = ["sys_platform == 'darwin'"]
 line-length = 120
 target-version = "py314"
 
-[tool.setuptools]
-packages = { find = { where = ["src"] } }
-include-package-data = true
-
-[tool.setuptools.package-data]
-backtesting = ["*.js"]
+[tool.maturin]
+python-source = "src"
+module-name = "backtesting._native"
+include = [{ path = "src/backtesting/*.js", format = "sdist" }]
 
 [tool.ruff.lint]
 select = [
@@ -56,6 +67,8 @@ select = [
 ]
 ignore = [
   "ANN001",
+  "ANN002",
+  "ANN003",
   "ANN202",
   "ANN204",
   "ANN401",
@@ -64,17 +77,20 @@ ignore = [
   "D102",
   "D103",
   "D104",
+  "D105",
   "D107",
   "D203",
   "D213",
   "D212",
+  "D400",
+  "D401",
+  "D415",
   "D205",
-  "D041",
   "S101",
 ]
 
 
-# --- Basedpyright configuration goes here ---
+# --- basedpyright config ---
 [tool.basedpyright]
 typeCheckingMode = "standard"
 venvPath = "."
@@ -82,3 +98,10 @@ extraPaths = ["src"]
 venv = ".venv"
 exclude = [".venv", ".git", "__pycache__", "data", "cache", ".ruff_cache"]
 useLibraryCodeForTypes = false
+
+
+# --- pytest config ---
+[tool.pytest.ini_options]
+filterwarnings = [
+  "ignore:time=.*Broker canceled the order due to insufficient margin.*:UserWarning",
+]

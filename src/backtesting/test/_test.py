@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
+from backtesting import Backtest, Strategy
 from backtesting._stats import compute_drawdown_duration_peaks
 from backtesting._util import _Array, _as_str, _Indicator, patch, try_
 from backtesting.lib import (
@@ -31,7 +32,6 @@ from backtesting.lib import (
     resample_apply,
 )
 from backtesting.test import BTCUSD, EURUSD, GOOG, SMA
-from src.backtesting import Backtest, Strategy
 
 SHORT_DATA = GOOG.iloc[:20]  # Short data for fast tests with no indicator lag
 
@@ -149,7 +149,7 @@ class TestBacktest(TestCase):
 
                 assert float(self.data.Close) == self.data.Close[-1]
 
-            def next(self, _FEW_DAYS: pd.Timedelta):
+            def next(self):
                 _FEW_DAYS = pd.Timedelta("3 days")
                 assert self.equity >= 0
 
@@ -475,7 +475,7 @@ class TestBacktest(TestCase):
 
 class TestStrategy(TestCase):
     @staticmethod
-    def _Backtest(strategy_coroutine, data=SHORT_DATA, **kwargs):
+    def _Backtest(strategy_coroutine, data=SHORT_DATA, **kwargs) -> Backtest:
         class S(Strategy):
             def init(self):
                 self.step = strategy_coroutine(self)
